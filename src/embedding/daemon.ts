@@ -1,106 +1,29 @@
 /**
- * 嵌入引擎 — 进程内 ONNX 推理
+ * 嵌入引擎 — 占位实现（OpenCode 插件上下文不支持 ONNX WASM）
  *
- * 直接在插件进程内加载 @xenova/transformers 模型，
- * 不 spawn 子进程，避免 OpenCode 的进程管理器冲突。
- * 使用动态 import 延迟加载，避免模块级静态导入时的 WASM 初始化阻塞。
+ * OpenCode 内置 Node.js 环境不支持 @xenova/transformers（原生模块 sharp 缺失），
+ * 且 spawn 子进程被 OpenCode 进程管理器拦截。嵌入推理功能暂时禁用。
+ *
+ * 影响的用户功能：memory_search 语义搜索、相似记忆自动去重。
+ * 不受影响的功能：记忆提取、审批、遗忘、会话上下文注入。
  */
 
-const MODEL_NAME = "Xenova/bge-base-en-v1.5"
-
-async function loadTransformers() {
-  const mod = await import("@xenova/transformers")
-  const env = mod.env
-  env.backends.onnx.wasm.numThreads = 1
-  env.backends.onnx.wasm.proxy = false
-  // HuggingFace 直连不通时用镜像站
-  env.remoteHost = process.env.HF_ENDPOINT ?? "https://hf-mirror.com"
-  return mod
-}
-
-type TransformersMod = Awaited<ReturnType<typeof loadTransformers>>
-type Extractor = (texts: string[]) => Promise<Array<{ data: Float32Array }>>
-
-class EmbeddingEngine {
-  private extractor: Extractor | null = null
-  private initPromise: Promise<void> | null = null
-
-  async init(): Promise<void> {
-    if (this.initPromise) return this.initPromise
-
-    this.initPromise = (async () => {
-      const mod = await loadTransformers()
-
-      const pipe = await mod.pipeline("feature-extraction", MODEL_NAME, {
-        quantized: true,
-      })
-
-      this.extractor = async (texts: string[]) => {
-        const results: Array<{ data: Float32Array }> = []
-        for (const text of texts) {
-          const result = await pipe(text, {
-            pooling: "mean",
-            normalize: true,
-          })
-          results.push({ data: new Float32Array(result.data as Float32Array) })
-        }
-        return results
-      }
-
-      console.log(`[EmbeddingEngine] 模型 ${MODEL_NAME} 加载完成`)
-    })()
-
-    return this.initPromise
-  }
-
-  async embed(texts: string[], mode: "query" | "passage"): Promise<number[][]> {
-    await this.init()
-
-    if (!this.extractor) throw new Error("嵌入模型未初始化")
-
-    const prefixed = texts.map((text) =>
-      mode === "query" ? `query: ${text}` : `passage: ${text}`,
-    )
-
-    const results = await this.extractor(prefixed)
-    return results.map((r) => Array.from(r.data))
-  }
-
-  async close(): Promise<void> {
-    this.extractor = null
-    this.initPromise = null
-  }
-}
-
-export const embeddingEngine = new EmbeddingEngine()
-
-export class EmbeddingDaemon {
-  private ready = false
+export const embeddingDaemon = {
+  ready: false,
 
   async start(): Promise<void> {
-    // 异步初始化模型，不阻塞插件启动
-    embeddingEngine.init().then(() => {
-      this.ready = true
-      console.log("[EmbeddingDaemon] 嵌入引擎就绪（进程内模式）")
-    }).catch((err) => {
-      console.warn(`[EmbeddingDaemon] 嵌入引擎启动失败: ${(err as Error).message}`)
-    })
-  }
+    console.log("[EmbeddingDaemon] 嵌入引擎已禁用 — 语义搜索和去重暂不可用")
+  },
 
-  async embed(texts: string[], mode: "query" | "passage"): Promise<number[][]> {
-    if (!this.ready) throw new Error("嵌入引擎未就绪")
-    return embeddingEngine.embed(texts, mode)
-  }
+  async embed(_texts: string[], _mode: string): Promise<number[][]> {
+    throw new Error("嵌入引擎未就绪")
+  },
 
   async stop(): Promise<void> {
-    await embeddingEngine.close()
-    this.ready = false
-  }
+    // no-op
+  },
 
   async restart(): Promise<void> {
-    await this.stop()
-    await this.start()
-  }
+    // no-op
+  },
 }
-
-export const embeddingDaemon = new EmbeddingDaemon()
