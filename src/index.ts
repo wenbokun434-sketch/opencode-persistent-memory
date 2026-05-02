@@ -37,7 +37,7 @@ let store: IMemoryStore
 let consolidator: MemoryConsolidator
 let initialized = false
 
-export const PersistentMemoryPlugin: Plugin = async (ctx) => {
+const PersistentMemoryPlugin: Plugin = async (ctx) => {
   const { directory, client } = ctx
 
   if (initialized) {
@@ -166,7 +166,7 @@ function buildPluginHooks(
       }),
     },
 
-    "session.created": async (input: {
+    event: async (input: {
       event: { type: string; properties: Record<string, unknown> }
     }) => {
       if (input.event.type !== "session.created") return
@@ -201,8 +201,8 @@ function buildPluginHooks(
     },
 
     "tool.execute.after": async (
-      input: { tool: string; args: unknown },
-      output: { output: string },
+      input: { tool: string; sessionID: string; callID: string; args: any },
+      output: { title: string; output: string; metadata: any },
     ) => {
       const monitoredTools = ["bash", "edit", "write"]
       if (!monitoredTools.includes(input.tool)) return
@@ -263,3 +263,5 @@ process.on("SIGINT", () => {
 process.on("beforeExit", () => {
   embeddingDaemon.stop().catch(() => {})
 })
+
+export default { server: PersistentMemoryPlugin }
