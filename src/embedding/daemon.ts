@@ -3,17 +3,22 @@
  *
  * 直接在插件进程内加载 @xenova/transformers 模型，
  * 不 spawn 子进程，避免 OpenCode 的进程管理器冲突。
+ * 使用动态 import 延迟加载，避免模块级静态导入时的 WASM 初始化阻塞。
  */
-import { pipeline, env } from "@xenova/transformers"
 
 const MODEL_NAME = "Xenova/bge-base-en-v1.5"
 
-// HuggingFace 直连不通时用镜像站
-env.remoteHost = process.env.HF_ENDPOINT ?? "https://hf-mirror.com"
-if (process.env.HF_TOKEN) {
-  env.useBrowserCache = false
+async function loadTransformers() {
+  const mod = await import("@xenova/transformers")
+  const env = mod.env
+  env.backends.onnx.wasm.numThreads = 1
+  env.backends.onnx.wasm.proxy = false
+  // HuggingFace 直连不通时用镜像站
+  env.remoteHost = process.env.HF_ENDPOINT ?? "https://hf-mirror.com"
+  return mod
 }
 
+type TransformersMod = Awaited<ReturnType<typeof loadTransformers>>
 type Extractor = (texts: string[]) => Promise<Array<{ data: Float32Array }>>
 
 class EmbeddingEngine {
@@ -24,10 +29,9 @@ class EmbeddingEngine {
     if (this.initPromise) return this.initPromise
 
     this.initPromise = (async () => {
-      env.backends.onnx.wasm.numThreads = 1
-      env.backends.onnx.wasm.proxy = false
+      const mod = await loadTransformers()
 
-      const pipe = await pipeline("feature-extraction", MODEL_NAME, {
+      const pipe = await mod.pipeline("feature-extraction", MODEL_NAME, {
         quantized: true,
       })
 
