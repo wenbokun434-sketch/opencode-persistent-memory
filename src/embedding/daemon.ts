@@ -7,6 +7,7 @@
 import { spawn, type ChildProcess } from "node:child_process"
 import { createInterface } from "node:readline"
 import { join } from "node:path"
+import { existsSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url))
@@ -28,16 +29,24 @@ export class EmbeddingDaemon {
   private ready = false
   private dying = false
 
+  private resolveWorkerPath(): string {
+    const compiledPath = join(__dirname, "..", "..", "dist", "embedding", "worker.js")
+    if (existsSync(compiledPath)) {
+      return compiledPath
+    }
+    const sourcePath = join(__dirname, "worker.js")
+    return sourcePath
+  }
+
   async start(): Promise<void> {
-    const workerPath = join(__dirname, "worker.ts")
+    const workerPath = this.resolveWorkerPath()
     const runtime = process.env.BUN ? "bun" : "node"
-    const execArgs: string[] = process.env.BUN
-      ? ["run", workerPath]
-      : ["--import", "tsx", workerPath]
+    const execArgs: string[] = [workerPath]
 
     this.child = spawn(runtime, execArgs, {
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env },
+      cwd: join(__dirname, "..", ".."),
     })
 
     this.child.stderr?.on("data", (data: Buffer) => {
@@ -68,11 +77,13 @@ export class EmbeddingDaemon {
           pong?: boolean
         }
 
-        if (data.pong) {
-          return
-        }
-
-        if (data.id === "pong") {
+        if (data.id && data.pong) {
+          const request = this.pending.get(data.id)
+          if (request) {
+            clearTimeout(request.timer)
+            this.pending.delete(data.id)
+            request.resolve([])
+          }
           return
         }
 
@@ -94,10 +105,18 @@ export class EmbeddingDaemon {
       }
     })
 
-    this.child.on("spawn", () => {
+    await new Promise<void>((resolve) => {
+      const check = () => {
+        if (this.ready) {
+          resolve()
+        } else {
+          setTimeout(check, 200)
+        }
+      }
       setTimeout(() => {
         this.ready = true
-      }, 5000)
+        resolve()
+      }, 8000)
     })
 
     this.startHealthCheck()
@@ -141,25 +160,22 @@ export class EmbeddingDaemon {
         this.restart()
       }, HEALTH_CHECK_TIMEOUT_MS)
 
-      const originalStdout = this.child.stdout!
-
       this.child.stdin!.write(
-        JSON.stringify({ mode: "query", text: "ping", id: pingId }) + "\n",
+        JSON.stringify({ mode: "ping", text: "ping", id: pingId }) + "\n",
       )
 
-      const listener = (data: Buffer) => {
-        const line = data.toString().trim()
-        if (line.includes(pingId)) {
+      const resolveWatcher = (id: string) => {
+        if (id === pingId) {
           clearTimeout(timedOut)
-          originalStdout.removeListener("data", listener)
         }
       }
-
-      originalStdout.on("data", listener)
-      setTimeout(() => {
-        originalStdout.removeListener("data", listener)
-        clearTimeout(timedOut)
-      }, HEALTH_CHECK_TIMEOUT_MS)
+      this.pending.set(pingId, {
+        resolve: () => resolveWatcher(pingId),
+        reject: () => {
+          clearTimeout(timedOut)
+        },
+        timer: timedOut,
+      })
     }, HEALTH_CHECK_INTERVAL_MS)
   }
 

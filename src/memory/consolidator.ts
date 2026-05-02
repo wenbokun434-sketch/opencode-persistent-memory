@@ -27,6 +27,10 @@ const CONFLICT_JUDGE_PROMPT =
 
 只回复 YES, NO 或 CONFLICT，不要输出其他内容。`
 
+export interface ConsolidateOptions {
+  providerId?: string
+}
+
 export class MemoryConsolidator {
   private store: IMemoryStore
 
@@ -45,8 +49,9 @@ export class MemoryConsolidator {
       source: string
       projectId: string
     }>,
-    providerId = "anthropic",
+    options: ConsolidateOptions = {},
   ): Promise<MemoryRecord[]> {
+    const providerId = options.providerId ?? "anthropic"
     const results: MemoryRecord[] = []
 
     for (const rec of newRecords) {
@@ -224,6 +229,15 @@ export class MemoryConsolidator {
       return record
     }
 
+    if (verdict === "NO") {
+      const record = this.createRecord(update, "PENDING")
+      await this.store.insert(record)
+      return record
+    }
+
+    console.warn(
+      `[Consolidator] LLM 冲突判定返回非预期值: "${verdict}"，按 NO 处理并新建记忆`,
+    )
     const record = this.createRecord(update, "PENDING")
     await this.store.insert(record)
     return record

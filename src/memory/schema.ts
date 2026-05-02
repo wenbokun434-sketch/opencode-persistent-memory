@@ -69,6 +69,8 @@ export function computeWeightedScore(
   return similarity * Math.exp(-TIME_DECAY_LAMBDA * daysSinceAccess)
 }
 
+import { randomUUID } from "node:crypto"
+
 export function generateMemoryId(): string {
-  return `mem_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+  return `mem_${randomUUID().replace(/-/g, "").slice(0, 16)}`
 }

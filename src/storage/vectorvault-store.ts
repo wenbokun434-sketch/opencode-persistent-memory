@@ -2,8 +2,10 @@
  * Vectorvault 降级存储实现 — 100% 纯 TypeScript，零原生依赖
  *
  * 当 ruvector 初始化失败时自动切换至此实现。
- * 基于内存 HNSW 索引，适合小规模记忆库（<10万条）。
+ * 基于内存 Map + JSON 文件持久化，适合小规模记忆库（<10万条）。
  */
+import { writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs"
+import { dirname } from "node:path"
 import type { IMemoryStore, SearchOptions, StorageConfig } from "./interface.js"
 import type { MemoryRecord, MemoryQueryResult } from "../memory/schema.js"
 import {
@@ -21,11 +23,22 @@ export class VectorvaultStore implements IMemoryStore {
   private records: Map<string, VaultRecord> = new Map()
   private projectId = "default"
   private initialized = false
+  private filePath = ""
 
   async initialize(config: StorageConfig): Promise<void> {
     this.projectId = config.projectId ?? "default"
+    this.filePath = `${config.storePath}/vectorvault_memories.json`
     this.initialized = true
-    console.log("[VectorvaultStore] 降级存储初始化完成（纯 TypeScript 模式）")
+
+    try {
+      await this.loadFromDisk()
+    } catch (err) {
+      console.warn(
+        `[VectorvaultStore] 无法从磁盘恢复数据: ${(err as Error).message}`,
+      )
+    }
+
+    console.log("[VectorvaultStore] 降级存储初始化完成（纯 TypeScript + 磁盘持久化模式）")
   }
 
   async insert(record: MemoryRecord): Promise<string> {
@@ -37,6 +50,7 @@ export class VectorvaultStore implements IMemoryStore {
       vector: record.vector ?? [],
     }
     this.records.set(id, vaultRecord)
+    await this.saveToDisk()
     return id
   }
 
@@ -55,7 +69,7 @@ export class VectorvaultStore implements IMemoryStore {
       const r = entry.record
 
       if (options.status && r.status !== options.status) continue
-      if (options.minConfidence && r.confidence < options.minConfidence) continue
+      if (options.minConfidence !== undefined && r.confidence < options.minConfidence) continue
 
       if (r.scope !== "global") {
         if (r.projectId !== projectId) continue
@@ -89,11 +103,13 @@ export class VectorvaultStore implements IMemoryStore {
     if (!entry) throw new Error(`记录不存在: ${id}`)
     entry.record = { ...entry.record, ...updates }
     this.records.set(id, entry)
+    await this.saveToDisk()
   }
 
   async delete(id: string): Promise<void> {
     this.ensureInit()
     this.records.delete(id)
+    await this.saveToDisk()
   }
 
   async markInvalid(id: string): Promise<void> {
@@ -122,6 +138,7 @@ export class VectorvaultStore implements IMemoryStore {
   }
 
   async close(): Promise<void> {
+    await this.saveToDisk()
     this.records.clear()
     this.initialized = false
   }
@@ -138,6 +155,45 @@ export class VectorvaultStore implements IMemoryStore {
     }
     const denom = Math.sqrt(na) * Math.sqrt(nb)
     return denom === 0 ? 0 : dot / denom
+  }
+
+  private async saveToDisk(): Promise<void> {
+    if (!this.filePath) return
+    const data: Array<{
+      id: string
+      record: MemoryRecord
+      vector: number[]
+    }> = []
+    for (const [, entry] of this.records) {
+      data.push({
+        id: entry.id,
+        record: entry.record,
+        vector: entry.vector,
+      })
+    }
+    try {
+      mkdirSync(dirname(this.filePath), { recursive: true })
+      writeFileSync(this.filePath, JSON.stringify(data, null, 2), "utf-8")
+    } catch (err) {
+      console.warn(`[VectorvaultStore] 保存磁盘失败: ${(err as Error).message}`)
+    }
+  }
+
+  private async loadFromDisk(): Promise<void> {
+    if (!this.filePath || !existsSync(this.filePath)) return
+    const raw = readFileSync(this.filePath, "utf-8")
+    const data = JSON.parse(raw) as Array<{
+      id: string
+      record: MemoryRecord
+      vector: number[]
+    }>
+    for (const entry of data) {
+      this.records.set(entry.id, {
+        id: entry.id,
+        record: entry.record,
+        vector: entry.vector,
+      })
+    }
   }
 
   private ensureInit(): void {

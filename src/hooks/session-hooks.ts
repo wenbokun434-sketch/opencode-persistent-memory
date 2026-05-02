@@ -4,7 +4,7 @@
  * session.created: 新会话启动时注入持久记忆上下文
  * tool.execute.after: 工具执行后提取记忆
  */
-import type { IMemoryStore } from "../storage/interface.js"
+import type { MemoryRecord as MemoryRecordForContext, MemoryScope as MemoryScopeForContext, MemoryEntityType as MemoryEntityTypeForContext } from "../memory/schema.js"
 
 export function buildMemoryContextBlock(
   memories: Array<{

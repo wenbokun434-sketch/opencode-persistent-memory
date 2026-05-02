@@ -7,19 +7,10 @@
 import type { IMemoryStore } from "../storage/interface.js"
 import { embeddingDaemon } from "../embedding/daemon.js"
 import { computeWeightedScore } from "../memory/schema.js"
+import { hashProjectPath } from "../hooks/session-hooks.js"
 
 function formatDate(ts: number): string {
   return new Date(ts).toLocaleDateString("zh-CN")
-}
-
-function hashPath(path: string): string {
-  let hash = 0
-  for (let i = 0; i < path.length; i++) {
-    const char = path.charCodeAt(i)
-    hash = (hash << 5) - hash + char
-    hash |= 0
-  }
-  return `proj_${Math.abs(hash).toString(36)}`
 }
 
 async function findFullId(
@@ -49,7 +40,7 @@ export function createMemoryDigestTool(store: IMemoryStore) {
       context: { directory: string },
     ) {
       const limit = args.limit ?? 10
-      const projectId = hashPath(context.directory)
+      const projectId = hashProjectPath(context.directory)
       const pending = await store.listByStatus("PENDING", projectId)
 
       if (pending.length === 0) {
@@ -87,7 +78,7 @@ export function createMemoryApproveTool(store: IMemoryStore) {
       args: { ids?: string },
       context: { directory: string },
     ) {
-      const projectId = hashPath(context.directory)
+      const projectId = hashProjectPath(context.directory)
 
       if (!args.ids || args.ids === "all") {
         const pending = await store.listByStatus("PENDING", projectId)
@@ -159,7 +150,7 @@ export function createMemorySearchTool(store: IMemoryStore) {
       context: { directory: string },
     ) {
       const limit = args.limit ?? 5
-      const projectId = hashPath(context.directory)
+      const projectId = hashProjectPath(context.directory)
 
       try {
         const vectors = await embeddingDaemon.embed([args.query], "query")

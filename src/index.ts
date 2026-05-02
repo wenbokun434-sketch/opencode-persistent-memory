@@ -1,7 +1,7 @@
 /**
  * OpenCode 跨会话记忆插件 — 主入口
  *
- * 本地优先、零配置的持久化 AI 记忆系统。
+ * 本地优先的持久化 AI 记忆系统。
  * 基于 Xenova/bge-base-en-v1.5 + spawn 长驻子进程 + ruvector/vectorvault 双轨降级。
  */
 import { join } from "node:path"
@@ -24,6 +24,8 @@ import {
   createMemorySearchTool,
 } from "./tools/memory-tools.js"
 
+const DEFAULT_PROVIDER = process.env.OPENCODE_MEMORY_PROVIDER ?? "anthropic"
+
 const STORE_PATH_DEFAULT = join(
   homedir(),
   ".config",
@@ -39,12 +41,13 @@ export const PersistentMemoryPlugin: Plugin = async (ctx) => {
   const { directory, client } = ctx
 
   if (initialized) {
-    return buildPluginHooks(store, client, directory)
+    return buildPluginHooks(store, client, directory, DEFAULT_PROVIDER)
   }
 
   const storePath =
     process.env.OPENCODE_MEMORY_STORE_PATH ?? STORE_PATH_DEFAULT
   const projectId = hashProjectPath(directory)
+  const providerId = DEFAULT_PROVIDER
 
   authResolver.loadCredentials()
 
@@ -61,8 +64,10 @@ export const PersistentMemoryPlugin: Plugin = async (ctx) => {
   consolidator = new MemoryConsolidator(store)
   initialized = true
 
-  console.log(`[PersistentMemory] 插件初始化完成 — 项目: ${projectId}`)
-  return buildPluginHooks(store, client, directory)
+  console.log(
+    `[PersistentMemory] 插件初始化完成 — 项目: ${projectId}，LLM 提供商: ${providerId}`,
+  )
+  return buildPluginHooks(store, client, directory, providerId)
 }
 
 async function initializeStore(
@@ -88,6 +93,7 @@ function buildPluginHooks(
   storeInstance: IMemoryStore,
   client: unknown,
   directory: string,
+  providerId: string,
 ) {
   const projectId = hashProjectPath(directory)
   const clientAny = client as {
@@ -218,7 +224,7 @@ function buildPluginHooks(
 
         const extraction = await extractMemories(
           { messages, projectId, directory },
-          "openai",
+          { providerId },
         )
 
         if (extraction.memories.length > 0) {
@@ -233,7 +239,7 @@ function buildPluginHooks(
               source: m.source,
               projectId,
             })),
-            "openai",
+            { providerId },
           )
         }
       } catch (err) {

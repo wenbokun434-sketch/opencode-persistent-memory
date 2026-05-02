@@ -39,10 +39,15 @@ source: 引用对话中的原文（最多80字）
 
 只输出 JSON 数组，不要输出其他内容。如果没有可提取的记忆，输出空数组 []。`
 
+export interface ExtractOptions {
+  providerId?: string
+}
+
 export async function extractMemories(
   input: ExtractionInput,
-  providerId = "anthropic",
+  options: ExtractOptions = {},
 ): Promise<ExtractionOutput> {
+  const providerId = options.providerId ?? "anthropic"
   const userPrompt = buildExtractionPrompt(input)
 
   const response = await sandboxFetch({
@@ -122,21 +127,23 @@ function extractJsonArray(text: string): string {
   return cleaned.slice(startIdx, endIdx + 1)
 }
 
+const VALID_ENTITY_TYPES: MemoryEntityType[] = [
+  "preference",
+  "architecture",
+  "error_solution",
+  "convention",
+  "decision",
+  "fact",
+]
+
 function validateEntityType(type: string): MemoryEntityType {
-  const valid: MemoryEntityType[] = [
-    "preference",
-    "architecture",
-    "error_solution",
-    "convention",
-    "decision",
-    "fact",
-  ]
-  return valid.includes(type as MemoryEntityType)
+  return VALID_ENTITY_TYPES.includes(type as MemoryEntityType)
     ? (type as MemoryEntityType)
     : "preference"
 }
 
+const VALID_SCOPES: MemoryScope[] = ["session", "project", "global"]
+
 function validateScope(scope: string): MemoryScope {
-  const valid: MemoryScope[] = ["session", "project", "global"]
-  return valid.includes(scope as MemoryScope) ? (scope as MemoryScope) : "project"
+  return VALID_SCOPES.includes(scope as MemoryScope) ? (scope as MemoryScope) : "project"
 }

@@ -10,7 +10,7 @@ import { createInterface } from "node:readline"
 const MODEL_NAME = "Xenova/bge-base-en-v1.5"
 
 interface WorkerRequest {
-  mode: "query" | "passage"
+  mode: "query" | "passage" | "ping"
   text: string
   id: string
 }
@@ -19,6 +19,7 @@ interface WorkerResponse {
   id: string
   vector?: number[]
   error?: string
+  pong?: boolean
 }
 
 let extractor: ((texts: string[]) => Promise<Array<{ data: Float32Array }>>) | null = null
@@ -51,6 +52,11 @@ function toResponse(response: WorkerResponse): string {
 }
 
 async function processRequest(request: WorkerRequest): Promise<void> {
+  if (request.mode === "ping") {
+    process.stdout.write(toResponse({ id: request.id, pong: true }))
+    return
+  }
+
   if (!extractor) {
     process.stdout.write(
       toResponse({ id: request.id, error: "模型尚未加载" }),
