@@ -8,6 +8,12 @@ import { pipeline, env } from "@xenova/transformers"
 
 const MODEL_NAME = "Xenova/bge-base-en-v1.5"
 
+// HuggingFace 直连不通时用镜像站
+env.remoteHost = process.env.HF_ENDPOINT ?? "https://hf-mirror.com"
+if (process.env.HF_TOKEN) {
+  env.useBrowserCache = false
+}
+
 type Extractor = (texts: string[]) => Promise<Array<{ data: Float32Array }>>
 
 class EmbeddingEngine {
