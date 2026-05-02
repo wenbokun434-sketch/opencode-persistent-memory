@@ -16,9 +16,10 @@ function formatDate(ts: number): string {
 async function findFullId(
   store: IMemoryStore,
   idSuffix: string,
+  projectId: string,
 ): Promise<string> {
-  const pending = await store.listByStatus("PENDING")
-  const active = await store.listByStatus("ACTIVE")
+  const pending = await store.listByStatus("PENDING", projectId)
+  const active = await store.listByStatus("ACTIVE", projectId)
   const all = [...pending, ...active]
   const match = all.find((m) => m.id.endsWith(idSuffix))
   if (!match) throw new Error(`未找到 ID: ${idSuffix}`)
@@ -95,7 +96,7 @@ export function createMemoryApproveTool(store: IMemoryStore) {
       let count = 0
       for (const idSuffix of idList) {
         try {
-          const fullId = await findFullId(store, idSuffix)
+          const fullId = await findFullId(store, idSuffix, projectId)
           await store.update(fullId, {
             status: "ACTIVE",
             lastAccessed: Date.now(),
@@ -120,9 +121,10 @@ export function createMemoryForgetTool(store: IMemoryStore) {
         description: "要删除的记忆 ID（后 8 位字符）",
       },
     },
-    async execute(args: { id: string }) {
+    async execute(args: { id: string }, context: { directory: string }) {
       try {
-        const fullId = await findFullId(store, args.id)
+        const projectId = hashProjectPath(context.directory)
+        const fullId = await findFullId(store, args.id, projectId)
         await store.markInvalid(fullId)
         return `已标记记忆 \`${args.id}\` 为无效。`
       } catch {

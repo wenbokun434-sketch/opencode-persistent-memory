@@ -47,9 +47,19 @@ const PersistentMemoryPlugin: Plugin = async (ctx) => {
   const storePath =
     process.env.OPENCODE_MEMORY_STORE_PATH ?? STORE_PATH_DEFAULT
   const projectId = hashProjectPath(directory)
-  const providerId = DEFAULT_PROVIDER
 
-  authResolver.loadCredentials()
+  // 确定有效的 LLM 提供商：优先用 env，否则自动检测 auth.json 中首个可用 provider
+  const availableCreds = authResolver.loadCredentials()
+  let providerId = DEFAULT_PROVIDER
+  const defaultCred = availableCreds.find(
+    (c) => c.providerId.toLowerCase() === DEFAULT_PROVIDER.toLowerCase(),
+  )
+  if (!defaultCred && availableCreds.length > 0) {
+    providerId = availableCreds[0].providerId
+    console.warn(
+      `[PersistentMemory] 默认提供商 ${DEFAULT_PROVIDER} 无可用凭证，自动降级至 ${providerId}`,
+    )
+  }
 
   try {
     await embeddingDaemon.start()
@@ -143,9 +153,10 @@ function buildPluginHooks(
         args: {
           id: tool.schema.string(),
         },
-        async execute(args) {
+        async execute(args, context) {
           return createMemoryForgetTool(storeInstance).execute(
             args as { id: string },
+            { directory: (context as { directory: string }).directory },
           )
         },
       }),

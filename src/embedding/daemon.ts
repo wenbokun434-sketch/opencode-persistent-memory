@@ -21,6 +21,7 @@ interface PendingRequest {
 const REQUEST_TIMEOUT_MS = 30_000
 const HEALTH_CHECK_INTERVAL_MS = 60_000
 const HEALTH_CHECK_TIMEOUT_MS = 10_000
+const READY_TIMEOUT_MS = 60_000
 
 export class EmbeddingDaemon {
   private child: ChildProcess | null = null
@@ -49,9 +50,16 @@ export class EmbeddingDaemon {
       cwd: join(__dirname, "..", ".."),
     })
 
-    this.child.stderr?.on("data", (data: Buffer) => {
-      const msg = data.toString().trim()
-      if (msg) console.warn(`[EmbeddingDaemon] ${msg}`)
+    // stderr 改用 readline 逐行解析，防止 OS 缓冲区切割导致分片
+    let workerReady = false
+    const rlErr = createInterface({ input: this.child.stderr! })
+    rlErr.on("line", (line: string) => {
+      const msg = line.trim()
+      if (!msg) return
+      console.warn(`[EmbeddingDaemon] ${msg}`)
+      if (!workerReady && msg.includes("模型加载完成")) {
+        workerReady = true
+      }
     })
 
     this.child.on("exit", (code, signal) => {
@@ -65,8 +73,8 @@ export class EmbeddingDaemon {
       }
     })
 
-    const rl = createInterface({ input: this.child.stdout! })
-    rl.on("line", (line: string) => {
+    const rlOut = createInterface({ input: this.child.stdout! })
+    rlOut.on("line", (line: string) => {
       const trimmed = line.trim()
       if (!trimmed) return
       try {
@@ -105,18 +113,24 @@ export class EmbeddingDaemon {
       }
     })
 
+    // Promise 内聚：超时 + stderr 就绪检测合并到一处
     await new Promise<void>((resolve) => {
-      const check = () => {
-        if (this.ready) {
-          resolve()
-        } else {
-          setTimeout(check, 200)
+      const readyTimeout = setTimeout(() => {
+        if (!workerReady) {
+          console.warn("[EmbeddingDaemon] 嵌入模型加载超时，将标记为就绪")
         }
-      }
-      setTimeout(() => {
         this.ready = true
         resolve()
-      }, 8000)
+      }, READY_TIMEOUT_MS)
+
+      const poll = setInterval(() => {
+        if (workerReady) {
+          clearTimeout(readyTimeout)
+          clearInterval(poll)
+          this.ready = true
+          resolve()
+        }
+      }, 100)
     })
 
     this.startHealthCheck()

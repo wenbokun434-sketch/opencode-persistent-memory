@@ -87,6 +87,8 @@ export class AuthResolver {
       console.warn(
         "[PersistentMemory] Dual-LLM 沙箱凭证失效，记忆提取将跳过云端点。请检查 auth.json。",
       )
+    } else {
+      this.available = true
     }
 
     return credentials

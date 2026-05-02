@@ -30,26 +30,26 @@ const DEFAULT_MODELS: Record<string, string> = {
 export async function sandboxFetch(
   config: SandboxPromptConfig,
 ): Promise<SandboxResponse> {
-  if (!authResolver.getAvailable()) {
-    return {
-      content: "",
-      success: false,
-      error: "Dual-LLM 沙箱凭证不可用",
-    }
-  }
-
   const credentials = authResolver.loadCredentials()
-  const cred = findCredential(credentials, config.providerId)
+  let cred = findCredential(credentials, config.providerId)
+
+  // 纵深防御：请求的 provider 无凭证时，自动降级到首个可用 provider
+  if (!cred && credentials.length > 0) {
+    cred = credentials[0]
+    console.warn(
+      `[SandboxFetch] ${config.providerId} 无可用凭证，自动降级至 ${cred.providerId}`,
+    )
+  }
 
   if (!cred) {
     return {
       content: "",
       success: false,
-      error: `未找到提供商 ${config.providerId} 的 API 密钥`,
+      error: "Dual-LLM 沙箱凭证不可用，请检查 auth.json",
     }
   }
 
-  const endpoint = authResolver.getApiEndpoint(cred.providerId)
+  const endpoint = cred.baseUrl ?? authResolver.getApiEndpoint(cred.providerId)
   const headers = authResolver.getProviderHeaders(cred.providerId, cred.apiKey)
 
   const modelId =
@@ -67,7 +67,6 @@ export async function sandboxFetch(
         temperature: config.temperature ?? 0.1,
         system: config.systemPrompt,
         messages: [{ role: "user", content: config.userPrompt }],
-        // 核心：不包含 tools 字段，物理隔离
       })
     } else {
       body = JSON.stringify({
@@ -78,7 +77,6 @@ export async function sandboxFetch(
           { role: "system", content: config.systemPrompt },
           { role: "user", content: config.userPrompt },
         ],
-        // 核心：不包含 tools 字段，物理隔离
       })
     }
 
@@ -127,5 +125,7 @@ function findCredential(
   providerId: string,
 ): AuthCredentials | undefined {
   const lower = providerId.toLowerCase()
+  const exact = credentials.find((c) => c.providerId.toLowerCase() === lower)
+  if (exact) return exact
   return credentials.find((c) => c.providerId.toLowerCase().includes(lower))
 }
