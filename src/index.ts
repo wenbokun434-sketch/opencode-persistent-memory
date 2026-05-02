@@ -61,14 +61,7 @@ const PersistentMemoryPlugin: Plugin = async (ctx) => {
     )
   }
 
-  try {
-    await embeddingDaemon.start()
-    console.log("[PersistentMemory] 嵌入引擎启动完成")
-  } catch (err) {
-    console.warn(
-      `[PersistentMemory] 嵌入引擎启动失败: ${(err as Error).message}`,
-    )
-  }
+  await embeddingDaemon.start()
 
   try {
     store = await initializeStore(storePath, projectId)
