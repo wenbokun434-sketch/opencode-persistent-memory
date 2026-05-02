@@ -102,8 +102,8 @@ export function createMemoryApproveTool(store: IMemoryStore) {
             lastAccessed: Date.now(),
           })
           count++
-        } catch {
-          // 忽略不存在的 ID
+        } catch (err) {
+          console.warn(`[PersistentMemory] 审批 ID ${idSuffix} 失败: ${(err as Error).message}`)
         }
       }
 

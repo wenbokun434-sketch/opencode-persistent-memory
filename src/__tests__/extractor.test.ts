@@ -9,15 +9,8 @@ import { describe, it, expect } from "vitest"
 function extractJsonArray(text: string): string {
   let cleaned = text.trim()
 
-  if (cleaned.startsWith("```json")) {
-    cleaned = cleaned.slice(7)
-  }
-  if (cleaned.startsWith("```")) {
-    cleaned = cleaned.slice(3)
-  }
-  if (cleaned.endsWith("```")) {
-    cleaned = cleaned.slice(0, -3)
-  }
+  cleaned = cleaned.replace(/^```(?:json)?\s*\n?/i, "")
+  cleaned = cleaned.replace(/\n?```\s*$/, "")
 
   cleaned = cleaned.trim()
 
@@ -91,5 +84,24 @@ describe("extractJsonArray", () => {
     const input = "[[1,2],[3,4]]"
     const result = extractJsonArray(input)
     expect(JSON.parse(result)).toEqual([[1, 2], [3, 4]])
+  })
+
+  // P2-4 修复验证: markdown 无换行 + 前后空格
+  it("处理无换行的 ```json[...]``` ", () => {
+    const input = '```json[{"x":1}]```'
+    const result = extractJsonArray(input)
+    expect(JSON.parse(result)).toEqual([{ x: 1 }])
+  })
+
+  it("处理前后有空格和换行的 markdown 数组", () => {
+    const input = '  \n```json\n[{"y":2}]\n```\n  '
+    const result = extractJsonArray(input)
+    expect(JSON.parse(result)).toEqual([{ y: 2 }])
+  })
+
+  it("处理 json 关键字大小写混合的 markdown", () => {
+    const input = '```JSON\n[{"z":3}]\n```'
+    const result = extractJsonArray(input)
+    expect(JSON.parse(result)).toEqual([{ z: 3 }])
   })
 })

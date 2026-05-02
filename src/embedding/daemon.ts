@@ -145,6 +145,10 @@ export class EmbeddingDaemon {
 
     for (const text of texts) {
       const id = `emb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+      if (!this.writeStdin(JSON.stringify({ mode, text, id }) + "\n")) {
+        throw new Error("子进程 stdin 不可写")
+      }
+
       const promise = new Promise<number[]>((resolve, reject) => {
         const timer = setTimeout(() => {
           this.pending.delete(id)
@@ -153,10 +157,6 @@ export class EmbeddingDaemon {
 
         this.pending.set(id, { resolve, reject, timer })
       })
-
-      this.child!.stdin!.write(
-        JSON.stringify({ mode, text, id }) + "\n",
-      )
 
       results.push(await promise)
     }
@@ -174,9 +174,10 @@ export class EmbeddingDaemon {
         this.restart()
       }, HEALTH_CHECK_TIMEOUT_MS)
 
-      this.child.stdin!.write(
-        JSON.stringify({ mode: "ping", text: "ping", id: pingId }) + "\n",
-      )
+      if (!this.writeStdin(JSON.stringify({ mode: "ping", text: "ping", id: pingId }) + "\n")) {
+        clearTimeout(timedOut)
+        return
+      }
 
       const resolveWatcher = (id: string) => {
         if (id === pingId) {
@@ -217,17 +218,33 @@ export class EmbeddingDaemon {
 
     if (this.child) {
       this.child.stdin?.end()
-      this.child.kill("SIGTERM")
-      setTimeout(() => {
-        if (this.child && !this.child.killed) {
-          this.child.kill("SIGKILL")
+      if (process.platform === "win32") {
+        this.child.kill("SIGTERM")
+        const pid = this.child.pid
+        if (pid) {
+          spawn("taskkill", ["/PID", String(pid), "/F", "/T"])
         }
-      }, 5000)
+      } else {
+        this.child.kill("SIGTERM")
+        setTimeout(() => {
+          if (this.child && !this.child.killed) {
+            this.child.kill("SIGKILL")
+          }
+        }, 5000)
+      }
       this.child = null
     }
 
     this.ready = false
     this.dying = false
+  }
+
+  private writeStdin(data: string): boolean {
+    if (this.child?.stdin?.writable) {
+      this.child.stdin.write(data)
+      return true
+    }
+    return false
   }
 }
 

@@ -5,6 +5,7 @@
  * 基于内存 Map + JSON 文件持久化，适合小规模记忆库（<10万条）。
  */
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs"
+import { writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
 import type { IMemoryStore, SearchOptions, StorageConfig } from "./interface.js"
 import type { MemoryRecord, MemoryQueryResult } from "../memory/schema.js"
@@ -138,7 +139,11 @@ export class VectorvaultStore implements IMemoryStore {
   }
 
   async close(): Promise<void> {
-    await this.saveToDisk()
+    try {
+      await this.saveToDisk()
+    } catch {
+      // 关闭时保存失败不应阻止资源释放
+    }
     this.records.clear()
     this.initialized = false
   }
@@ -173,9 +178,9 @@ export class VectorvaultStore implements IMemoryStore {
     }
     try {
       mkdirSync(dirname(this.filePath), { recursive: true })
-      writeFileSync(this.filePath, JSON.stringify(data, null, 2), "utf-8")
+      await writeFile(this.filePath, JSON.stringify(data, null, 2), "utf-8")
     } catch (err) {
-      console.warn(`[VectorvaultStore] 保存磁盘失败: ${(err as Error).message}`)
+      throw new Error(`[VectorvaultStore] 保存磁盘失败: ${(err as Error).message}`)
     }
   }
 

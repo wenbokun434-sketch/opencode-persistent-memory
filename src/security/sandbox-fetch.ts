@@ -98,16 +98,21 @@ export async function sandboxFetch(
 
     const data = (await response.json()) as Record<string, unknown>
 
-    let content: string
+    let content = ""
 
     if (isAnthropic) {
-      const contentList = data.content as Array<{ type: string; text: string }>
-      content = contentList?.map((c) => c.text).join("") ?? ""
+      const rawContent = data.content
+      if (Array.isArray(rawContent)) {
+        content = rawContent
+          .map((c: unknown) => (c as { text?: string })?.text ?? "")
+          .join("")
+      }
     } else {
-      const choices = data.choices as Array<{
-        message: { content: string }
-      }>
-      content = choices?.[0]?.message?.content ?? ""
+      const choices = data.choices
+      if (Array.isArray(choices) && choices.length > 0) {
+        const first = choices[0] as { message?: { content?: string } }
+        content = first?.message?.content ?? ""
+      }
     }
 
     return { content, success: true }

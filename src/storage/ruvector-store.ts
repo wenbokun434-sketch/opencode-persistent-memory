@@ -188,13 +188,25 @@ export class RuvectorStore implements IMemoryStore {
     const vectorArr = this.vectorCache.get(id) ??
       (existing.vector ? Array.from(existing.vector) : [])
 
+    const newVector = vectorArr.length > 0 ? new Float32Array(vectorArr) : new Float32Array(VECTOR_DIMENSIONS)
+
     // ruvector 无原生 update，用 delete + insert 实现
     await this.db.delete(id)
-    await this.db.insert({
-      id,
-      vector: vectorArr.length > 0 ? new Float32Array(vectorArr) : new Float32Array(VECTOR_DIMENSIONS),
-      metadata: merged,
-    })
+    try {
+      await this.db.insert({
+        id,
+        vector: newVector,
+        metadata: merged,
+      })
+    } catch {
+      // 回滚: 用原始数据重新插入
+      await this.db.insert({
+        id: existing.id ?? id,
+        vector: existing.vector ?? newVector,
+        metadata: oldMeta,
+      })
+      throw new Error(`记录更新失败，已回滚: ${id}`)
+    }
   }
 
   async delete(id: string): Promise<void> {

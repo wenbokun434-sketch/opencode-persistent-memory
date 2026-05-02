@@ -5,7 +5,7 @@
  * 基于 Xenova/bge-base-en-v1.5 + spawn 长驻子进程 + ruvector/vectorvault 双轨降级。
  */
 import { join } from "node:path"
-import { homedir } from "node:os"
+import { homedir, tmpdir } from "node:os"
 import { tool } from "@opencode-ai/plugin"
 import type { Plugin } from "@opencode-ai/plugin"
 
@@ -70,7 +70,24 @@ const PersistentMemoryPlugin: Plugin = async (ctx) => {
     )
   }
 
-  store = await initializeStore(storePath, projectId)
+  try {
+    store = await initializeStore(storePath, projectId)
+  } catch (err) {
+    console.warn(
+      `[PersistentMemory] 所有存储引擎初始化失败: ${(err as Error).message}，使用纯内存兜底`,
+    )
+    const fallbackStore = new VectorvaultStore()
+    // 跳过磁盘路径，纯内存模式
+    try {
+      await fallbackStore.initialize({
+        storePath: join(tmpdir(), "opencode_memory_fallback"),
+        projectId,
+      })
+    } catch {
+      await fallbackStore.initialize({ storePath, projectId })
+    }
+    store = fallbackStore
+  }
   consolidator = new MemoryConsolidator(store)
   initialized = true
 
@@ -191,6 +208,11 @@ function buildPluginHooks(
 
         const block = buildMemoryContextBlock(activeMemories)
         const sessionId = input.event.properties.sessionId as string
+
+        if (typeof clientAny.session?.prompt !== "function") {
+          console.warn("[PersistentMemory] client.session.prompt 不可用，跳过上下文注入")
+          return
+        }
 
         await clientAny.session.prompt({
           path: { id: sessionId },

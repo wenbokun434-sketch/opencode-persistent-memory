@@ -78,7 +78,7 @@ export async function extractMemories(
     return {
       memories: parsed.map((m) => ({
         ...m,
-        confidence: Math.min(1, Math.max(0, m.confidence)),
+        confidence: Math.min(1, Math.max(0, m.confidence ?? 0.5)),
         entityType: validateEntityType(m.entityType),
         scope: validateScope(m.scope),
       })),
@@ -107,15 +107,8 @@ ${conversation}
 function extractJsonArray(text: string): string {
   let cleaned = text.trim()
 
-  if (cleaned.startsWith("```json")) {
-    cleaned = cleaned.slice(7)
-  }
-  if (cleaned.startsWith("```")) {
-    cleaned = cleaned.slice(3)
-  }
-  if (cleaned.endsWith("```")) {
-    cleaned = cleaned.slice(0, -3)
-  }
+  cleaned = cleaned.replace(/^```(?:json)?\s*\n?/i, "")
+  cleaned = cleaned.replace(/\n?```\s*$/, "")
 
   cleaned = cleaned.trim()
 

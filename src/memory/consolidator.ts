@@ -135,7 +135,8 @@ export class MemoryConsolidator {
         projectId: rec.projectId,
         status: "ACTIVE",
       })
-    } catch {
+    } catch (err) {
+      console.warn(`[Consolidator] 相似度搜索失败: ${(err as Error).message}`)
       return []
     }
   }
