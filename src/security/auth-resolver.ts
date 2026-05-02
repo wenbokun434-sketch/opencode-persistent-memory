@@ -57,24 +57,21 @@ export class AuthResolver {
       if (!existsSync(filePath)) continue
       try {
         const raw = readFileSync(filePath, "utf-8")
-        const data = JSON.parse(raw)
+        const data: unknown = JSON.parse(raw)
 
-        const entries: AuthFileEntry[] = Array.isArray(data) ? data : [data]
-
-        for (const entry of entries) {
-          const apiKey = entry.key ?? entry.apiKey
-          if (!apiKey) continue
-
-          const cred: AuthCredentials = {
-            providerId: entry.id,
-            apiKey,
-            baseUrl: entry.baseUrl,
+        if (Array.isArray(data)) {
+          // 数组格式: [{ id: "deepseek", key: "sk-..." }]
+          for (const entry of data as AuthFileEntry[]) {
+            this.tryAddCredential(entry.id, entry.key ?? entry.apiKey, entry.baseUrl, credentials)
           }
-
-          const cacheKey = `${cred.providerId}:${cred.apiKey.slice(-8)}`
-          if (!this.cache.has(cacheKey)) {
-            this.cache.set(cacheKey, cred)
-            credentials.push(cred)
+        } else if (typeof data === "object" && data !== null) {
+          // OpenCode 对象格式: { "deepseek": { "type": "api", "key": "sk-..." } }
+          for (const [providerId, config] of Object.entries(data as Record<string, unknown>)) {
+            if (typeof config !== "object" || config === null) continue
+            const cfg = config as Record<string, unknown>
+            const apiKey = (cfg.key ?? cfg.apiKey) as string | undefined
+            const baseUrl = cfg.baseUrl as string | undefined
+            this.tryAddCredential(providerId, apiKey, baseUrl, credentials)
           }
         }
       } catch (err) {
@@ -93,6 +90,27 @@ export class AuthResolver {
     }
 
     return credentials
+  }
+
+  private tryAddCredential(
+    providerId: string,
+    apiKey: string | undefined,
+    baseUrl: string | undefined,
+    credentials: AuthCredentials[],
+  ): void {
+    if (!apiKey || !providerId) return
+
+    const cred: AuthCredentials = {
+      providerId,
+      apiKey,
+      baseUrl,
+    }
+
+    const cacheKey = `${cred.providerId}:${cred.apiKey.slice(-8)}`
+    if (!this.cache.has(cacheKey)) {
+      this.cache.set(cacheKey, cred)
+      credentials.push(cred)
+    }
   }
 
   getApiEndpoint(providerId: string): string {
