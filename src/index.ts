@@ -70,14 +70,17 @@ const PersistentMemoryPlugin: Plugin = async (ctx) => {
       `[PersistentMemory] 所有存储引擎初始化失败: ${(err as Error).message}，使用纯内存兜底`,
     )
     const fallbackStore = new VectorvaultStore()
-    // 跳过磁盘路径，纯内存模式
     try {
       await fallbackStore.initialize({
         storePath: join(tmpdir(), "opencode_memory_fallback"),
         projectId,
       })
     } catch {
-      await fallbackStore.initialize({ storePath, projectId })
+      try {
+        await fallbackStore.initialize({ storePath: storePath, projectId })
+      } catch {
+        // 最终兜底：跳过磁盘持久化，纯内存模式
+      }
     }
     store = fallbackStore
   }
@@ -202,7 +205,7 @@ function buildPluginHooks(
         const block = buildMemoryContextBlock(activeMemories)
         const sessionId = input.event.properties.sessionId as string
 
-        if (typeof clientAny.session?.prompt !== "function") {
+        if (typeof clientAny?.session?.prompt !== "function") {
           console.warn("[PersistentMemory] client.session.prompt 不可用，跳过上下文注入")
           return
         }
@@ -269,7 +272,7 @@ function buildPluginHooks(
           )
         }
       } catch (err) {
-        const msg = (err as Error).message
+        const msg = (err as Error)?.message ?? ""
         if (!msg.includes("凭证")) {
           console.warn(`[PersistentMemory] 提取失败: ${msg}`)
         }

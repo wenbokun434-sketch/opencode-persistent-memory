@@ -21,7 +21,7 @@ async function findFullId(
   const pending = await store.listByStatus("PENDING", projectId)
   const active = await store.listByStatus("ACTIVE", projectId)
   const all = [...pending, ...active]
-  const match = all.find((m) => m.id.endsWith(idSuffix))
+  const match = all.find((m) => m.id?.endsWith(idSuffix))
   if (!match) throw new Error(`未找到 ID: ${idSuffix}`)
   return match.id
 }
